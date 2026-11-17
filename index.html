@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d12">
+<title>iStrip+ Remote</title>
+<style>
+:root{--bg:#0b0d12;--card:#151922;--line:#252b38;--txt:#e8ebf2;--mut:#8a93a6;--acc:#6ea8ff;--ok:#4ade80;--bad:#f87171}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--txt);font:16px system-ui,sans-serif;padding:14px 14px 40px;max-width:520px;margin-inline:auto}
+h1{font-size:18px;margin:4px 0 12px;display:flex;justify-content:space-between;align-items:center}
+h1 small{font-size:13px;font-weight:400;color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+.card h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 10px}
+button{background:#1f2533;color:var(--txt);border:1px solid var(--line);border-radius:12px;padding:14px 10px;font-size:15px;min-height:48px}
+button:active{background:#2a3246}
+button:disabled{opacity:.4}
+button.pri{background:var(--acc);color:#06101f;border:0;font-weight:600}
+button.off{background:#3a1f24}
+button.sel{outline:2px solid var(--acc)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.row{display:flex;gap:8px;align-items:center;margin:8px 0}
+.row>*{flex:1}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px}
+.dot.on{background:var(--ok)}
+input[type=range]{width:100%;height:36px;accent-color:var(--acc)}
+input[type=text],textarea,select{width:100%;background:#0e1118;color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:10px;font:13px ui-monospace,monospace}
+label{font-size:13px;color:var(--mut);display:block;margin-top:8px}
+.sw{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:15px}
+.sw input{width:22px;height:22px}
+.warn{background:#2a2110;border:1px solid #5a4514;color:#f5d58a;padding:10px;border-radius:12px;font-size:13px;margin-bottom:12px;display:none}
+#wheelWrap{display:flex;justify-content:center}
+canvas{touch-action:none;border-radius:50%}
+details summary{cursor:pointer;color:var(--mut);padding:6px 0}
+pre{white-space:pre-wrap;word-break:break-all;background:#0e1118;border:1px solid var(--line);border-radius:10px;padding:8px;font-size:12px;max-height:220px;overflow:auto;margin:6px 0}
+#prev{width:100%;height:10px;border-radius:5px;margin-top:8px}
+.note{font-size:12px;color:var(--mut);margin-top:8px}
+</style>
+</head>
+<body>
+<h1>iStrip+ Remote <span id="status"><span class="dot" id="dot"></span><small id="stxt">Disconnected</small></span></h1>
+<div class="warn" id="compat"></div>
+
+<div class="card">
+  <div class="grid">
+    <button class="pri" id="btnConn">Connect</button>
+    <button id="btnPower">Power: ?</button>
+  </div>
+  <div class="sw"><span>Auto-apply TV Bias on connect</span><input type="checkbox" id="auto"></div>
+  <div class="row"><button id="saveBias">Save current look as "TV Bias"</button></div>
+</div>
+
+<div class="card">
+  <h2>TV bias presets</h2>
+  <div class="grid3">
+    <button data-p="6500">6500K<br>Neutral</button>
+    <button data-p="movie">Warm<br>Movie</button>
+    <button data-p="dim">Soft<br>Dim 20%</button>
+  </div>
+  <div class="note">RGB strips only approximate white. Tune a preset on the wheel, then save it as "TV Bias".</div>
+</div>
+
+<div class="card">
+  <h2>Color</h2>
+  <div id="wheelWrap"><canvas id="wheel" width="260" height="260"></canvas></div>
+  <div id="prev"></div>
+  <label>Brightness <span id="briv">100</span>%</label>
+  <input type="range" id="bri" min="1" max="100" value="100">
+</div>
+
+<div class="card">
+  <h2>Effects</h2>
+  <div class="grid" id="fxgrid"></div>
+  <label>Speed <span id="spdv">50</span></label>
+  <input type="range" id="spd" min="1" max="100" value="50">
+  <div class="note">Tapping an effect uses your current color as its base where the effect allows. Speed is 1-100.</div>
+</div>
+
+<div class="card">
+<details id="dev"><summary><b>Developer / Debug</b></summary>
+  <label>AES-128 key (32 hex chars, ECB)</label>
+  <input type="text" id="key">
+  <label>Control service UUID</label><input type="text" id="svc">
+  <label>Preferred write characteristic UUID</label><input type="text" id="chr">
+  <div class="sw"><span>Send JOIN_GROUP once after connecting</span><input type="checkbox" id="join"></div>
+  <div class="row"><button id="saveCfg">Save settings</button><button id="resetCfg">Reset defaults</button></div>
+
+  <label>Write characteristic in use (writable ones found after connecting)</label>
+  <select id="wsel"></select>
+  <div class="note" id="wnote"></div>
+
+  <label>Discovered GATT services &amp; characteristics</label>
+  <pre id="gatt">Not connected</pre>
+
+  <div class="row"><button id="sendJoin">Send JOIN_GROUP</button></div>
+
+  <label>Raw hex send</label>
+  <textarea id="raw" rows="2" placeholder="16 bytes plaintext e.g. 54 52 00 57 02 01 00 ff 00 00 64 64 00 00 00 00"></textarea>
+  <div class="sw"><span>Encrypt with AES key before sending</span><input type="checkbox" id="rawenc" checked></div>
+  <div class="sw"><span>Pad to 16 bytes with 00</span><input type="checkbox" id="rawpad" checked></div>
+  <div class="row"><button id="sendRaw">Send</button><button id="clrLog">Clear log</button></div>
+  <label>Log</label>
+  <pre id="log"></pre>
+</details>
+</div>
+
+<div class="card note" style="margin-bottom:0">
+Chrome on Android needs HTTPS or localhost. iOS Safari has no Web Bluetooth: use the Bluefy browser (or a Web Bluetooth Safari extension) and open this page there.
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const DEF={
+  key:'34522a5b7a6e492c08090a9d8d2a23f8',
+  svc:'0000ac50-1212-efde-1523-785fedbeda25',
+  chr:'0000ac52-1212-efde-1523-785fedbeda25',
+  join:true,auto:false,
+  bias:{r:255,g:169,b:87,bri:60}
+};
+const OTA_SVC='0000ae00-0000-1000-8000-00805f9b34fb';
+const OTA_CHR='0000ae01-0000-1000-8000-00805f9b34fb';
+let cfg=Object.assign({},DEF,JSON.parse(localStorage.getItem('istrip2')||'{}'));
+const HEADER=[0x54,0x52,0x00,0x57],GROUP=1;
+const EFFECTS=[['7-Color Fade',1,1],['3-Color Fade',2,1],['7-Color Breathing',5,1],['3-Color Breathing',6,1],
+ ['Red Breathing',3,1],['Green Breathing',11,1],['Blue Breathing',7,1],['7-Color Flash',9,100],
+ ['3-Color Flash',10,100],['Red Strobe',4,100],['Green Strobe',12,100],['Blue Strobe',8,100]];
+let dev=null,server=null,wch=null,writables=[];
+let state={on:true,r:255,g:255,b:255,bri:100,mode:0,speed:50};
+
+function log(s){const l=$('log');l.textContent=new Date().toLocaleTimeString()+' '+s+'\n'+l.textContent}
+const h2b=h=>{h=h.replace(/[^0-9a-f]/gi,'');if(h.length%2)throw Error('odd hex length');return new Uint8Array((h.match(/../g)||[]).map(x=>parseInt(x,16)))};
+const b2h=b=>[...b].map(x=>x.toString(16).padStart(2,'0')).join(' ');
+const clamp=(n,a,b)=>Math.max(a,Math.min(b,Math.round(n)));
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+/* settings */
+function load(){$('key').value=cfg.key;$('svc').value=cfg.svc;$('chr').value=cfg.chr;$('join').checked=cfg.join;$('auto').checked=cfg.auto}
+function save(){cfg.key=$('key').value.trim();cfg.svc=$('svc').value.trim().toLowerCase();cfg.chr=$('chr').value.trim().toLowerCase();
+  cfg.join=$('join').checked;cfg.auto=$('auto').checked;localStorage.setItem('istrip2',JSON.stringify(cfg))}
+$('auto').onchange=save;$('join').onchange=save;
+$('saveCfg').onclick=()=>{save();log('settings saved')};
+$('resetCfg').onclick=()=>{localStorage.removeItem('istrip2');cfg=Object.assign({},DEF);load();log('defaults restored')};
+
+/* compat */
+(function(){
+  const ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  const c=$('compat');
+  if(!navigator.bluetooth){c.style.display='block';
+    c.innerHTML=ios?'iOS Safari blocks Web Bluetooth. Open this page in <b>Bluefy</b> (App Store) or use a Web Bluetooth Safari extension.'
+      :'Web Bluetooth is not available in this browser. Use Chrome or Edge on Android or desktop, over HTTPS.';
+    $('btnConn').disabled=true;
+  }else if(!isSecureContext){c.style.display='block';c.textContent='Bluetooth needs HTTPS or localhost.'}
+})();
+
+/* AES-128 ECB using Web Crypto (no native ECB: single block via CBC with zero IV) */
+const ZERO=new Uint8Array(16);
+async function keyFor(usages){const kb=h2b(cfg.key);if(kb.length!==16)throw Error('AES key must be 16 bytes');
+  return crypto.subtle.importKey('raw',kb,'AES-CBC',false,usages)}
+async function ecbEncrypt(block){
+  const k=await keyFor(['encrypt']);
+  const out=new Uint8Array(await crypto.subtle.encrypt({name:'AES-CBC',iv:ZERO},k,block));
+  return out.slice(0,16); // drop the extra PKCS7 padding block
+}
+async function ecbDecrypt(block){
+  const k=await keyFor(['encrypt','decrypt']);
+  // craft a 2nd block so the padding validates: C2 = E(C xor 0x10..)
+  const x=block.map(v=>v^0x10);
+  const c2=await ecbEncrypt(x);
+  const full=new Uint8Array(32);full.set(block);full.set(c2,16);
+  return new Uint8Array(await crypto.subtle.decrypt({name:'AES-CBC',iv:ZERO},k,full));
+}
+
+/* frames */
+function frame(type,mode,r,g,b,bri,spd){
+  const p=new Uint8Array(16);p.set(HEADER);p[4]=type;p[5]=GROUP;
+  if(type===2){p[6]=mode;p[7]=clamp(r,0,255);p[8]=clamp(g,0,255);p[9]=clamp(b,0,255);p[10]=clamp(bri,0,100);p[11]=clamp(spd,0,100)}
+  return p;
+}
+const joinFrame=()=>frame(1);
+
+/* serialised write queue (GATT allows one op at a time) */
+let q=Promise.resolve();
+function enqueue(fn){q=q.then(fn).catch(e=>log('ERR '+e.message));return q}
+function sendPlain(bytes,encrypt=true){
+  return enqueue(async()=>{
+    if(!wch)throw Error('Not connected');
+    const out=encrypt?await ecbEncrypt(bytes):bytes;
+    log('TX '+b2h(out));
+    if(wch.properties.writeWithoutResponse&&wch.writeValueWithoutResponse)await wch.writeValueWithoutResponse(out);
+    else await wch.writeValue(out);
+  });
+}
+
+/* apply current state */
+function currentFrame(){
+  if(!state.on)return frame(2,0,0,0,0,0,100);
+  return frame(2,state.mode,state.r,state.g,state.b,state.bri,state.mode?state.speed:100);
+}
+const applyNow=()=>wch?sendPlain(currentFrame()):Promise.resolve();
+let lastSend=0,tmr;
+function schedule(){clearTimeout(tmr);const wait=Math.max(0,150-(Date.now()-lastSend));
+  tmr=setTimeout(()=>{lastSend=Date.now();applyNow()},wait)}
+
+function paintPower(){$('btnPower').textContent='Power: '+(state.on?'ON':'OFF');$('btnPower').className=state.on?'':'off'}
+$('btnPower').onclick=()=>{state.on=!state.on;paintPower();applyNow()};
+
+/* connection */
+function setStatus(c,t){$('dot').className='dot'+(c?' on':'');$('stxt').textContent=t;$('btnConn').textContent=c?'Disconnect':'Connect'}
+async function getDevice(){
+  const svcs=[cfg.svc||DEF.svc,OTA_SVC];
+  return navigator.bluetooth.requestDevice({filters:[{namePrefix:'SSL-'}],optionalServices:svcs});
+}
+async function connect(){
+  save();
+  try{
+    setStatus(false,'Connecting…');
+    let ok=false;
+    if(dev){ // same-page reconnect without picker (e.g. TV power-cycled the strip)
+      try{server=await dev.gatt.connect();ok=true}catch(e){log('quick reconnect failed, opening picker')}
+    }
+    if(!ok){
+      setStatus(false,'Scanning…');
+      dev=await getDevice();
+      dev.addEventListener('gattserverdisconnected',()=>{setStatus(false,'Disconnected');wch=null;q=Promise.resolve();log('disconnected')});
+      setStatus(false,'Connecting…');
+      server=await dev.gatt.connect();
+    }
+    await discover();
+    if(!wch)throw Error('No usable write characteristic found');
+    setStatus(true,'Connected '+(dev.name||''));
+    if(cfg.join){await sendPlain(joinFrame());await sleep(200)}
+    if(cfg.auto)await applyBias();
+  }catch(e){setStatus(false,'Disconnected');log('ERR '+e.message)}
+}
+async function discover(){
+  let out='';writables=[];const notifies=[];
+  const svcs=await server.getPrimaryServices();
+  for(const s of svcs){
+    out+='SVC '+s.uuid+(s.uuid===OTA_SVC?'  (OTA / firmware)':'')+'\n';
+    for(const c of await s.getCharacteristics()){
+      const p=c.properties,fl=Object.keys(p).filter(k=>p[k]).join(',');
+      out+='  CHR '+c.uuid+' ['+fl+']\n';
+      if(p.write||p.writeWithoutResponse)writables.push({s,c});
+      if(p.notify||p.indicate)notifies.push({s,c});
+    }
+  }
+  if(!svcs.length)out='No accessible services. Check the service UUID in settings.';
+  $('gatt').textContent=out;log('found '+svcs.length+' service(s)');
+
+  // write char: preferred UUID first, then any non-OTA writable, OTA only as last resort
+  const pref=(cfg.chr||DEF.chr).toLowerCase();
+  let pick=writables.find(w=>w.c.uuid===pref)
+        ||writables.find(w=>w.s.uuid!==OTA_SVC&&w.c.uuid!==OTA_CHR)
+        ||writables.find(w=>w.c.uuid===OTA_CHR);
+  const sel=$('wsel');sel.innerHTML='';
+  writables.forEach((w,i)=>{const o=document.createElement('option');o.value=i;
+    o.textContent=w.c.uuid.slice(0,8)+(w.c.uuid===OTA_CHR?' (OTA, do not use)':'');
+    if(pick&&w===pick)o.selected=true;sel.appendChild(o)});
+  setWrite(pick);
+
+  // notify: by property, preferring the same service as the write char
+  const n=(pick&&notifies.find(x=>x.s===pick.s))||notifies[0];
+  if(n){
+    try{await n.c.startNotifications();
+      n.c.addEventListener('characteristicvaluechanged',onNotify);
+      log('notifications on '+n.c.uuid)}
+    catch(e){log('notify ERR '+e.message)}
+  }else log('no notify characteristic found');
+}
+function setWrite(p){
+  if(!p){wch=null;return}
+  wch=p.c;log('write char '+wch.uuid);
+  $('wnote').textContent=wch.uuid===OTA_CHR?'Warning: this is the firmware-update characteristic. The strip will ignore light commands sent here.':'';
+}
+$('wsel').onchange=e=>setWrite(writables[+e.target.value]);
+async function onNotify(e){
+  const v=e.target.value,b=new Uint8Array(v.buffer,v.byteOffset,v.byteLength);
+  let s='RX '+b2h(b);
+  if(b.length===16)try{
+    const d=await ecbDecrypt(b);s+='\n   dec '+b2h(d);
+    if(HEADER.every((x,i)=>d[i]===x))s+='  [type '+d[4]+', mode '+d[6]+', rgb '+d[7]+','+d[8]+','+d[9]+', bri '+d[10]+', spd '+d[11]+']';
+  }catch(err){s+=' (decrypt failed: '+err.message+')'}
+  log(s);
+}
+$('btnConn').onclick=()=>{
+  if(dev&&dev.gatt.connected){dev.gatt.disconnect()}else connect();
+};
+
+/* color wheel */
+const wheel=$('wheel'),ctx=wheel.getContext('2d');
+function hsv(h,s,v){const f=n=>{const k=(n+h/60)%6;return v-v*s*Math.max(0,Math.min(k,4-k,1))};return[f(5),f(3),f(1)].map(x=>Math.round(x*255))}
+(function(){
+  const S=260,R=S/2,img=ctx.createImageData(S,S);
+  for(let y=0;y<S;y++)for(let x=0;x<S;x++){
+    const dx=x-R,dy=y-R,d=Math.hypot(dx,dy),i=(y*S+x)*4;
+    if(d<=R){const c=hsv(((Math.atan2(dy,dx)*180/Math.PI)+360)%360,d/R,1);img.data.set([c[0],c[1],c[2],255],i)}
+  }ctx.putImageData(img,0,0);
+})();
+function preview(){$('prev').style.background='rgb('+state.r+','+state.g+','+state.b+')'}
+function pickColor(e){
+  const rc=wheel.getBoundingClientRect(),x=(e.clientX-rc.left)*260/rc.width,y=(e.clientY-rc.top)*260/rc.height;
+  const p=ctx.getImageData(clamp(x,0,259),clamp(y,0,259),1,1).data;
+  if(!p[3])return;
+  state.r=p[0];state.g=p[1];state.b=p[2];state.on=true;
+  if(state.mode===0)clearFxSel();preview();paintPower();schedule();
+}
+let drag=false;
+wheel.onpointerdown=e=>{drag=true;wheel.setPointerCapture(e.pointerId);pickColor(e)};
+wheel.onpointermove=e=>drag&&pickColor(e);
+wheel.onpointerup=wheel.onpointercancel=()=>drag=false;
+$('bri').oninput=e=>{state.bri=+e.target.value;$('briv').textContent=state.bri;state.on=true;paintPower();schedule()};
+
+/* presets */
+const PRE={'6500':{r:255,g:249,b:253,bri:100},movie:{r:255,g:169,b:87,bri:60},dim:{r:255,g:180,b:107,bri:20}};
+function setLook(p){Object.assign(state,{r:p.r,g:p.g,b:p.b,bri:p.bri,mode:0,on:true});
+  $('bri').value=p.bri;$('briv').textContent=p.bri;clearFxSel();preview();paintPower()}
+document.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{setLook(PRE[b.dataset.p]);applyNow()});
+async function applyBias(){setLook(cfg.bias);await applyNow();log('TV Bias applied')}
+$('saveBias').onclick=()=>{cfg.bias={r:state.r,g:state.g,b:state.b,bri:state.bri};save();log('TV Bias saved')};
+
+/* effects */
+function clearFxSel(){document.querySelectorAll('#fxgrid button').forEach(b=>b.classList.remove('sel'))}
+EFFECTS.forEach(([name,mode,defSpd])=>{
+  const b=document.createElement('button');b.textContent=name;
+  b.onclick=()=>{
+    if(state.mode!==mode){$('spd').value=defSpd;$('spdv').textContent=defSpd;state.speed=defSpd}
+    state.mode=mode;state.on=true;clearFxSel();b.classList.add('sel');paintPower();applyNow();
+  };
+  $('fxgrid').appendChild(b);
+});
+$('spd').oninput=e=>{state.speed=+e.target.value;$('spdv').textContent=state.speed;if(state.mode)schedule()};
+state.speed=+$('spd').value;
+
+/* debug */
+$('sendJoin').onclick=()=>sendPlain(joinFrame());
+$('sendRaw').onclick=()=>{
+  try{
+    let b=h2b($('raw').value);
+    if($('rawpad').checked&&b.length<16){const n=new Uint8Array(16);n.set(b);b=n}
+    if($('rawenc').checked&&b.length%16)throw Error('encrypted payload must be a multiple of 16 bytes');
+    if($('rawenc').checked&&b.length>16)throw Error('send one 16-byte block at a time');
+    sendPlain(b,$('rawenc').checked);
+  }catch(e){log('ERR '+e.message)}
+};
+$('clrLog').onclick=()=>$('log').textContent='';
+
+load();preview();paintPower();
+</script>
+</body>
+</html>
